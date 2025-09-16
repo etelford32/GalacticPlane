@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Black Hole Map</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(to bottom, #000428, #004e92);
+            overflow: hidden;
+            color: white;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 350px;
+            z-index: 100;
+        }
+        #legend {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            z-index: 100;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
+            border: 2px solid white;
+        }
+        #tooltip {
+            position: absolute;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 5px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            pointer-events: none;
+            display: none;
+            z-index: 1000;
+            font-size: 14px;
+            max-width: 300px;
+        }
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #4a9eff;
+            text-shadow: 0 0 10px rgba(74, 158, 255, 0.5);
+        }
+        .controls {
+            font-size: 12px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .scale-info {
+            font-size: 11px;
+            color: #aaa;
+            margin-top: 10px;
+        }
+        #distance-scale {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 5px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div id="info">
+        <div class="title">Black Holes in 3D Space</div>
+        <div>Explore known black holes positioned by their celestial coordinates</div>
+        <div class="controls">
+            <strong>Controls:</strong><br>
+            • Left Click + Drag: Rotate view<br>
+            • Right Click + Drag: Pan camera<br>
+            • Scroll: Zoom in/out<br>
+            • Click on a black hole for details
+        </div>
+        <div class="scale-info">
+            Note: Distances are logarithmically scaled for visualization.<br>
+            Grid squares = 10,000 light-years
+        </div>
+    </div>
+    
+    <div id="legend">
+        <div style="font-weight: bold; margin-bottom: 10px;">Black Hole Types</div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #FFD700;"></div>
+            <span>Our Galaxy's Center (Sgr A*)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #FF4444;"></div>
+            <span>Supermassive (>1M solar masses)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #4444FF;"></div>
+            <span>Stellar Mass (<100 solar masses)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #44FF44;"></div>
+            <span>Nearby (<10k light-years)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #FF44FF;"></div>
+            <span>Extragalactic</span>
+        </div>
+    </div>
+    
+    <div id="distance-scale">
+        <strong>Distance Scale:</strong><br>
+        🌍 Earth (You are here)<br>
+        ━━━ 1,000 ly<br>
+        ━━━━━━ 10,000 ly<br>
+        ━━━━━━━━━ 100,000 ly<br>
+        ━━━━━━━━━━━━ Milky Way edge
+    </div>
+    
+    <div id="tooltip"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Black hole data with coordinates and distances
+        const blackHoles = [
+            // Supermassive Black Holes
+            {
+                name: "Sagittarius A*",
+                type: "center",
+                ra: 266.417, // converted from 17h 45m to degrees
+                dec: -29.008,
+                distance: 26000, // light-years
+                mass: "4 million solar masses",
+                info: "Our galaxy's central black hole"
+            },
+            {
+                name: "M87*",
+                type: "supermassive",
+                ra: 187.706,
+                dec: 12.391,
+                distance: 55000000,
+                mass: "6.5 billion solar masses",
+                info: "First black hole ever photographed"
+            },
+            // Stellar Mass Black Holes
+            {
+                name: "Cygnus X-1",
+                type: "stellar",
+                ra: 299.590,
+                dec: 35.202,
+                distance: 6070,
+                mass: "21.2 solar masses",
+                info: "First confirmed black hole"
+            },
+            {
+                name: "Gaia BH1",
+                type: "nearby",
+                ra: 262.171,
+                dec: -0.581,
+                distance: 1600,
+                mass: "10 solar masses",
+                info: "Closest known black hole to Earth"
+            },
+            {
+                name: "Gaia BH3",
+                type: "stellar",
+                ra: 294.828,
+                dec: -59.879,
+                distance: 2000,
+                mass: "33 solar masses",
+                info: "Most massive stellar black hole in Milky Way"
+            },
+            {
+                name: "V404 Cygni",
+                type: "stellar",
+                ra: 306.016,
+                dec: 33.868,
+                distance: 7800,
+                mass: "9-12 solar masses",
+                info: "Famous X-ray binary system"
+            },
+            {
+                name: "GRO J1655-40",
+                type: "stellar",
+                ra: 253.501,
+                dec: -39.846,
+                distance: 11000,
+                mass: "6-7 solar masses",
+                info: "Microquasar with relativistic jets"
+            },
+            // Extragalactic
+            {
+                name: "LMC X-1",
+                type: "extragalactic",
+                ra: 84.912,
+                dec: -69.743,
+                distance: 160000,
+                mass: "10-11 solar masses",
+                info: "First extragalactic black hole"
+            },
+            {
+                name: "M33 X-7",
+                type: "extragalactic",
+                ra: 23.392,
+                dec: 30.536,
+                distance: 3000000,
+                mass: "16 solar masses",
+                info: "Most massive stellar companion"
+            },
+            // More stellar mass
+            {
+                name: "SS 433",
+                type: "stellar",
+                ra: 287.957,
+                dec: 4.983,
+                distance: 18000,
+                mass: "Unknown (likely 10-20 solar masses)",
+                info: "Famous for precessing jets"
+            },
+            {
+                name: "MAXI J1820+070",
+                type: "stellar",
+                ra: 275.091,
+                dec: 7.187,
+                distance: 10000,
+                mass: "8-10 solar masses",
+                info: "Recent bright outburst in 2018"
+            },
+            // Quasars (very distant)
+            {
+                name: "3C 273",
+                type: "supermassive",
+                ra: 187.278,
+                dec: 2.052,
+                distance: 2400000000,
+                mass: "880 million solar masses",
+                info: "First quasar ever discovered"
+            },
+            {
+                name: "Markarian 231",
+                type: "supermassive",
+                ra: 194.059,
+                dec: 56.874,
+                distance: 600000000,
+                mass: "150 million solar masses",
+                info: "Nearest quasar to Earth"
+            }
+        ];
+
+        // Three.js setup
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x000428, 100, 10000);
+        
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            50000
+        );
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        
+        const pointLight = new THREE.PointLight(0xffffff, 1, 1000);
+        pointLight.position.set(50, 50, 50);
+        scene.add(pointLight);
+
+        // Convert spherical coordinates to Cartesian
+        function sphericalToCartesian(ra, dec, distance) {
+            // Apply logarithmic scale for better visualization
+            const scaledDistance = Math.log10(distance + 1) * 10;
+            
+            const raRad = (ra * Math.PI) / 180;
+            const decRad = (dec * Math.PI) / 180;
+            
+            const x = scaledDistance * Math.cos(decRad) * Math.cos(raRad);
+            const y = scaledDistance * Math.sin(decRad);
+            const z = scaledDistance * Math.cos(decRad) * Math.sin(raRad);
+            
+            return { x, y, z };
+        }
+
+        // Create black hole objects
+        const blackHoleObjects = [];
+        
+        blackHoles.forEach(bh => {
+            const pos = sphericalToCartesian(bh.ra, bh.dec, bh.distance);
+            
+            // Determine color based on type
+            let color;
+            switch(bh.type) {
+                case 'center': color = 0xFFD700; break; // Gold for Sgr A*
+                case 'supermassive': color = 0xFF4444; break; // Red
+                case 'stellar': color = 0x4444FF; break; // Blue
+                case 'nearby': color = 0x44FF44; break; // Green
+                case 'extragalactic': color = 0xFF44FF; break; // Magenta
+                default: color = 0xFFFFFF;
+            }
+            
+            // Size based on type (logarithmic scale for visibility)
+            let size = bh.type === 'supermassive' || bh.type === 'center' ? 2 : 1;
+            if (bh.distance > 1000000) size *= 2; // Make distant objects larger for visibility
+            
+            // Create sphere for black hole
+            const geometry = new THREE.SphereGeometry(size, 32, 32);
+            const material = new THREE.MeshPhongMaterial({
+                color: color,
+                emissive: color,
+                emissiveIntensity: 0.5,
+                shininess: 100
+            });
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.position.set(pos.x, pos.y, pos.z);
+            sphere.userData = bh;
+            scene.add(sphere);
+            blackHoleObjects.push(sphere);
+            
+            // Add glow effect
+            const glowGeometry = new THREE.SphereGeometry(size * 2, 32, 32);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.2
+            });
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            glow.position.copy(sphere.position);
+            scene.add(glow);
+            
+            // Add label (for nearby objects)
+            if (bh.distance < 30000 || bh.name === "M87*" || bh.name === "Sagittarius A*") {
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = 256;
+                canvas.height = 64;
+                context.font = '24px Arial';
+                context.fillStyle = 'white';
+                context.fillText(bh.name, 10, 40);
+                
+                const texture = new THREE.CanvasTexture(canvas);
+                const spriteMaterial = new THREE.SpriteMaterial({ 
+                    map: texture,
+                    transparent: true
+                });
+                const sprite = new THREE.Sprite(spriteMaterial);
+                sprite.position.copy(sphere.position);
+                sprite.position.y += size + 2;
+                sprite.scale.set(10, 2.5, 1);
+                scene.add(sprite);
+            }
+        });
+
+        // Add Earth at origin
+        const earthGeometry = new THREE.SphereGeometry(0.5, 32, 32);
+        const earthMaterial = new THREE.MeshPhongMaterial({
+            color: 0x2233FF,
+            emissive: 0x112244,
+            shininess: 100
+        });
+        const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+        earth.position.set(0, 0, 0);
+        scene.add(earth);
+
+        // Add coordinate grid
+        const gridHelper = new THREE.GridHelper(200, 20, 0x444444, 0x222222);
+        scene.add(gridHelper);
+
+        // Add axes helper (RGB = XYZ)
+        const axesHelper = new THREE.AxesHelper(50);
+        scene.add(axesHelper);
+
+        // Camera controls (simple orbit controls)
+        let mouseX = 0, mouseY = 0;
+        let targetX = 0, targetY = 0;
+        let isMouseDown = false;
+        let isPanning = false;
+        let cameraDistance = 100;
+        let theta = 45; // horizontal angle
+        let phi = 30; // vertical angle
+
+        function updateCameraPosition() {
+            const radTheta = theta * Math.PI / 180;
+            const radPhi = phi * Math.PI / 180;
+            
+            camera.position.x = cameraDistance * Math.sin(radTheta) * Math.cos(radPhi);
+            camera.position.y = cameraDistance * Math.sin(radPhi);
+            camera.position.z = cameraDistance * Math.cos(radTheta) * Math.cos(radPhi);
+            
+            camera.lookAt(0, 0, 0);
+        }
+
+        updateCameraPosition();
+
+        // Mouse controls
+        renderer.domElement.addEventListener('mousedown', (e) => {
+            isMouseDown = true;
+            isPanning = e.button === 2; // right click for pan
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+
+        renderer.domElement.addEventListener('mouseup', () => {
+            isMouseDown = false;
+            isPanning = false;
+        });
+
+        renderer.domElement.addEventListener('mousemove', (e) => {
+            if (isMouseDown) {
+                const deltaX = e.clientX - mouseX;
+                const deltaY = e.clientY - mouseY;
+                
+                if (isPanning) {
+                    // Pan camera
+                    const panSpeed = 0.5;
+                    camera.position.x -= deltaX * panSpeed;
+                    camera.position.z -= deltaY * panSpeed;
+                } else {
+                    // Rotate camera
+                    theta -= deltaX * 0.5;
+                    phi = Math.max(-80, Math.min(80, phi + deltaY * 0.5));
+                    updateCameraPosition();
+                }
+                
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            }
+        });
+
+        // Zoom control
+        renderer.domElement.addEventListener('wheel', (e) => {
+            cameraDistance = Math.max(10, Math.min(500, cameraDistance + e.deltaY * 0.1));
+            updateCameraPosition();
+        });
+
+        // Prevent context menu on right click
+        renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // Raycaster for object interaction
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const tooltip = document.getElementById('tooltip');
+
+        renderer.domElement.addEventListener('click', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(blackHoleObjects);
+            
+            if (intersects.length > 0) {
+                const bh = intersects[0].object.userData;
+                tooltip.style.display = 'block';
+                tooltip.style.left = event.clientX + 10 + 'px';
+                tooltip.style.top = event.clientY + 10 + 'px';
+                
+                const distanceStr = bh.distance < 1000000 
+                    ? `${bh.distance.toLocaleString()} light-years`
+                    : `${(bh.distance / 1000000).toFixed(1)} million light-years`;
+                
+                if (bh.distance > 1000000000) {
+                    distanceStr = `${(bh.distance / 1000000000).toFixed(2)} billion light-years`;
+                }
+                
+                tooltip.innerHTML = `
+                    <strong style="color: #4a9eff;">${bh.name}</strong><br>
+                    <strong>Type:</strong> ${bh.type}<br>
+                    <strong>Mass:</strong> ${bh.mass}<br>
+                    <strong>Distance:</strong> ${distanceStr}<br>
+                    <strong>Coordinates:</strong> RA ${bh.ra.toFixed(2)}°, Dec ${bh.dec.toFixed(2)}°<br>
+                    <em>${bh.info}</em>
+                `;
+                
+                setTimeout(() => {
+                    tooltip.style.display = 'none';
+                }, 5000);
+            }
+        });
+
+        // Add stars background
+        const starsGeometry = new THREE.BufferGeometry();
+        const starsMaterial = new THREE.PointsMaterial({
+            color: 0xFFFFFF,
+            size: 0.5,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const starsVertices = [];
+        for (let i = 0; i < 10000; i++) {
+            const x = (Math.random() - 0.5) * 2000;
+            const y = (Math.random() - 0.5) * 2000;
+            const z = (Math.random() - 0.5) * 2000;
+            starsVertices.push(x, y, z);
+        }
+        
+        starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+        const stars = new THREE.Points(starsGeometry, starsMaterial);
+        scene.add(stars);
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Rotate Earth
+            earth.rotation.y += 0.005;
+            
+            // Subtle rotation of star field
+            stars.rotation.y += 0.0001;
+            
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
